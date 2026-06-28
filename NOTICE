@@ -1,0 +1,18 @@
+This project builds on two Apache-2.0 licensed repositories. `cao/ao_runtime.py` is a
+clean reimplementation of their verified activation-injection / extraction / read-logprobs
+semantics (the semantics were lifted, not the source files):
+
+  - Activation Oracles — Karvonen et al., 2025
+    https://github.com/adamkarvonen/activation_oracles  (Apache-2.0)
+    arXiv:2512.15674
+
+  - CoT Oracle — De Schamphelaere (ceselder), 2026
+    https://github.com/ceselder/cot-oracle  (Apache-2.0)
+    Released checkpoints: https://huggingface.co/ceselder
+
+  - Building Better Activation Oracles — Bauer, De Schamphelaere, Karvonen, Luick, Nanda, 2026
+    https://github.com/japhba/activation_oracles  (Apache-2.0)
+    arXiv:2606.02609
+
+The released oracle checkpoint (e.g. ceselder/cot-oracle-v15-stochastic) is a LoRA adapter
+on Qwen/Qwen3-8B and is downloaded from HuggingFace at runtime; it is not redistributed here.

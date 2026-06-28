@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+*.egg-info/
+# activation caches / experiment outputs
+*.npy
+*.npz
+*.pt
+*.safetensors
+acts_cache/
+results/
+wandb/
+.ipynb_checkpoints/
