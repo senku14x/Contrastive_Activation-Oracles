@@ -31,7 +31,7 @@ def main() -> int:
     print("(A)-(D) token ids:", ol)
     print(f"  -> equal length: {eq}" + ("" if eq else "   ** FIX: hint length varies with target **"))
 
-    starts, fails = [], []
+    starts, fails, within_fail = [], [], []
     print(f"\n{'id':4}{'type':7}{'lenA':>5}{'lenB':>5}{'sufA':>6}{'sufB':>6}  "
           f"f{N_FINAL}_idMatch  final{N_FINAL}_decode")
     for p in P.PAIRS:
@@ -44,6 +44,8 @@ def main() -> int:
             idmatch = [idsA[i] for i in fa] == [idsB[i] for i in fb]
             dec = tok.decode([idsA[i] for i in fa])
             starts += [a0, b0]
+            if a0 != b0:
+                within_fail.append(p["pair_id"])
             if not idmatch:
                 fails.append(p["pair_id"])
             print(f"{p['pair_id']:4}{p['predicted_type']:7}{len(idsA):>5}{len(idsB):>5}"
@@ -52,14 +54,21 @@ def main() -> int:
             fails.append(p["pair_id"])
             print(f"{p['pair_id']:4}{p['predicted_type']:7}  ERROR: {e}")
 
-    L = max(starts) if starts else 0
-    print(f"\nrequired L (max suffix-start index across pairs) = {L}")
-    print(f"(A)-(D) equal length: {eq}")
-    print(f"final-{N_FINAL} suffix-token identity FAILED for: {fails or 'none'}")
-    print("\nReading: (A)-(D) MUST be equal; final-N identity MUST hold for all pairs. "
-          "sufA vs sufB differing is expected pre-padding (filler vs hint lengths) — that is the "
-          "padding budget we apply next. If (A)-(D) is unequal or final-N identity fails, fix before GPU work.")
-    return 0 if eq and not fails else 1
+    uniq = sorted(set(starts))
+    uniform = (len(uniq) == 1)
+    print(f"\nsuffix-start values across all pairs/conditions: {uniq}")
+    print(f"(A)-(D) equal length:                 {eq}")
+    print(f"within-pair sufA==sufB:               {'ALL OK' if not within_fail else 'FAIL ' + str(within_fail)}  (MANDATORY)")
+    print(f"cross-pair common L (all equal):      {uniform}  (target of Option 1)")
+    print(f"final-{N_FINAL} suffix-token identity:        {'ALL OK' if not fails else 'FAIL ' + str(fails)}  (MANDATORY)")
+    if not (eq and not within_fail and not fails):
+        print("\n** Blocking issue — fix before GPU work. **")
+    elif not uniform:
+        print(f"\nWithin-pair OK, but contexts not all the same length: {uniq}. Tune the wording of the "
+              "off-length contexts to the common target so every sufStart matches (cleaner cross-pair controls).")
+    else:
+        print("\nAll invariants satisfied (within-pair aligned, common L, seam-robust). Ready for behavior labelling.")
+    return 0 if (eq and not within_fail and not fails and uniform) else 1
 
 
 if __name__ == "__main__":
