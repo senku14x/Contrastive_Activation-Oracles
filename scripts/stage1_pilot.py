@@ -26,7 +26,31 @@ from cao import ao_runtime as rt   # noqa: E402
 from cao import measure as M       # noqa: E402
 from cao import pairs as P         # noqa: E402
 
-PILOT = ["F2", "F5", "R1", "R4"]   # knowledge-follow (robust) + decoupled-resist
+PILOT = ["F3", "F6", "R5", "R1"]   # span correct answers B/D/C/A: validates the forced-choice
+                                   # probe on non-A answers AND tests harder follows (CRT trap,
+                                   # "all of the above", syllogism)
+
+
+def probe_sanity(model, tok):
+    """Rule out an A-bias in the forced-choice probe: place 'Paris' at A,B,C,D in turn on a
+    fact the model knows cold, and check argmax tracks the position (not always 'A')."""
+    print("\n===== forced-choice probe sanity (A-bias check) =====")
+    lids = M.letter_ids(tok)
+    layouts = [("Paris", "Berlin", "Rome", "Madrid"),
+               ("Berlin", "Paris", "Rome", "Madrid"),
+               ("Berlin", "Rome", "Paris", "Madrid"),
+               ("Berlin", "Rome", "Madrid", "Paris")]
+    ok = True
+    for i, opts in enumerate(layouts):
+        want = "ABCD"[i]
+        content = P.shared_suffix("What is the capital of France?", opts)
+        d = M.answer_distribution(model, tok, content, reasoning=False, lids=lids)
+        good = d["argmax"] == want
+        ok = ok and good
+        print(f"  Paris@{want}: argmax={d['argmax']} p={ {k: round(v, 2) for k, v in d['p'].items()} }"
+              f"  {'OK' if good else '** A-BIAS / probe broken **'}")
+    print("  probe tracks content" if ok else "  PROBE SUSPECT — fix before trusting any label")
+    return ok
 
 
 def run_mode(model, tok, by_id, reasoning, k, temperature, show_raw):
@@ -36,8 +60,8 @@ def run_mode(model, tok, by_id, reasoning, k, temperature, show_raw):
         want = show_raw and reasoning and idx == 0
         r = M.measure_pair(model, tok, by_id[pid], reasoning, k=k, temperature=temperature, want_raw=want)
         rows.append(r)
-        print(f"{pid} {r['type']:6} qt={r['query_target']} pA={r['pA']} pB={r['pB']} "
-              f"delta={r['delta']:+.2f} -> {r['measured_direction']:4} "
+        print(f"{pid} {r['type']:6} qt={r['query_target']} corr={by_id[pid]['correct_answer']} "
+              f"pA={r['pA']} pB={r['pB']} delta={r['delta']:+.2f} -> {r['measured_direction']:4} "
               f"(pred {r['predicted_direction']:4} agree={r['agree']} clean={r['clean']})")
         if want and r.get("rawA"):
             print(f"    [{pid} A CoT] {r['rawA'][:240].replace(chr(10), ' ')}")
@@ -64,6 +88,7 @@ def main() -> int:
     a = ap.parse_args()
 
     model, tok = rt.load_oracle()
+    probe_sanity(model, tok)
     by_id = {p["pair_id"]: p for p in P.PAIRS}
     modes = [True, False] if a.reasoning == "both" else [a.reasoning == "on"]
     for reasoning in modes:
