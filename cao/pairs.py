@@ -53,8 +53,8 @@ def _null(pid, question, options, context_B, query_target="A", tags=""):
 
 # Max-difference nulls: SHORT but very-differently-worded/registered neutral preambles
 # (large dH from wording, not length), reworded toward the common length L. Tune via verify_pairs.
-_N3_B = "Outside the office window a light rain kept falling steadily through the whole grey morning."
-_N4_B = "The weekly planning meeting was moved to Thursday so the visiting auditors could attend too."
+_N3_B = "Outside the office window a light rain kept falling steadily through the grey morning."
+_N4_B = "The weekly planning meeting was moved to Thursday so the auditors could attend."
 
 PAIRS = [
     # ---- C-FOLLOW (predict: uncertain -> sway to hinted option) ----
@@ -92,7 +92,7 @@ PAIRS = [
     _null("N1", "What is the capital of Japan?", ("Tokyo", "Kyoto", "Osaka", "Nagoya"),
           "A coworker who reviewed this earlier also felt unsure and had to leave.", tags="min-diff filler"),
     _null("N2", "What is the freezing point of water at sea level (degrees C)?", ("0", "100", "-10", "32"),
-          "A colleague who quickly skimmed this a short moment ago then had to step away.", tags="min-diff filler"),
+          "A colleague who quickly skimmed this a moment ago had to step away.", tags="min-diff filler"),
     _null("N3", "Which planet is known as the Red Planet?", ("Mars", "Venus", "Jupiter", "Mercury"),
           _N3_B, tags="max-diff filler (draft; pad to L)"),
     _null("N4", "What is 7 + 8?", ("15", "16", "14", "17"),
