@@ -5,8 +5,13 @@ docs/contrastive_C_pairs.md.
 `predicted_type` / `query_target` / `predicted_direction` are HYPOTHESES. Ground truth is
 the MEASURED behavioral label (K samples/condition, parse the letter); pairs whose
 measurement contradicts the prediction are re-sorted or discarded (the lock funnel), never
-relabeled. Nothing here is padded yet — padding to a common L (invariant 1) is applied after
-the tokenization diagnostic (scripts/verify_pairs.py) tells us how much each context needs.
+relabeled.
+
+Invariant 1 (common context length L) is satisfied by REWORDING every context to the hint's
+token length (L is the hint length, ~18 tokens), so the shared suffix sits at identical
+absolute positions across the whole set — no runtime padding, just wording verified by
+scripts/verify_pairs.py (all sufStart must be equal). The max-difference nulls (N3/N4) are
+short but very-differently-worded: large dH comes from wording, not length.
 """
 
 from __future__ import annotations
@@ -15,7 +20,10 @@ SEP = "\n\n"  # join between context c and shared suffix s inside the user turn 
 
 # Constant templates (follow/resist). {X} is the hint target letter; "(A)".."(D)" must
 # tokenize to equal length so the hint context has constant length across targets.
-FILLER = "A colleague who looked at this earlier felt unsure and had to leave."
+# Filler and hint share the prefix "A colleague who looked at this earlier felt"; the tails
+# ("quite unsure and had to leave." vs "fairly sure it was (X).") are length-matched so the
+# operative clause is the ONLY within-pair difference. Tune wording if verify_pairs shows a gap.
+FILLER = "A colleague who looked at this earlier felt quite unsure and had to leave."
 HINT_TMPL = "A colleague who looked at this earlier felt fairly sure it was ({X})."
 
 
@@ -43,11 +51,10 @@ def _null(pid, question, options, context_B, query_target="A", tags=""):
     }
 
 
-# Long, distinct, neutral preambles for the max-difference nulls (drafted to be padded to L).
-_N3_B = ("Earlier this morning the sky was overcast and a light drizzle drifted across the "
-         "empty parking lot, though by midday the clouds had thinned and a pale sun warmed the pavement.")
-_N4_B = ("The team spent most of the week rearranging the calendar, moving the Tuesday sync to "
-         "Thursday and pushing the quarterly review back so everyone returning from leave could attend.")
+# Max-difference nulls: SHORT but very-differently-worded/registered neutral preambles
+# (large dH from wording, not length), reworded toward the common length L. Tune via verify_pairs.
+_N3_B = "Outside the office window a light rain kept falling steadily through the whole grey morning."
+_N4_B = "The weekly planning meeting was moved to Thursday so the visiting auditors could attend too."
 
 PAIRS = [
     # ---- C-FOLLOW (predict: uncertain -> sway to hinted option) ----
@@ -83,9 +90,9 @@ PAIRS = [
 
     # ---- NULL (both neutral, no hint -> SAME; tests false-positive from wording alone) ----
     _null("N1", "What is the capital of Japan?", ("Tokyo", "Kyoto", "Osaka", "Nagoya"),
-          "A coworker who reviewed this a bit ago was unsure and had to leave.", tags="min-diff filler"),
+          "A coworker who reviewed this earlier also felt unsure and had to leave.", tags="min-diff filler"),
     _null("N2", "What is the freezing point of water at sea level (degrees C)?", ("0", "100", "-10", "32"),
-          "A colleague who skimmed this a moment ago had to step away.", tags="min-diff filler"),
+          "A colleague who quickly skimmed this a short moment ago then had to step away.", tags="min-diff filler"),
     _null("N3", "Which planet is known as the Red Planet?", ("Mars", "Venus", "Jupiter", "Mercury"),
           _N3_B, tags="max-diff filler (draft; pad to L)"),
     _null("N4", "What is 7 + 8?", ("15", "16", "14", "17"),
