@@ -32,14 +32,15 @@ PILOT = ["F2", "F5", "R1", "R4"]   # knowledge-follow (robust) + decoupled-resis
 def run_mode(model, tok, by_id, reasoning, k, temperature, show_raw):
     print(f"\n===== reasoning {'ON' if reasoning else 'OFF'}  (K={k}, T={temperature}) =====")
     rows = []
-    for pid in PILOT:
-        r = M.measure_pair(model, tok, by_id[pid], reasoning, k=k, temperature=temperature)
+    for idx, pid in enumerate(PILOT):
+        want = show_raw and reasoning and idx == 0
+        r = M.measure_pair(model, tok, by_id[pid], reasoning, k=k, temperature=temperature, want_raw=want)
         rows.append(r)
-        print(f"{pid} {r['type']:6} qt={r['query_target']} "
-              f"domA={r['domA']} domB={r['domB']} fA={r['fA']:.2f} fB={r['fB']:.2f} "
-              f"delta={r['delta']:+.2f} -> measured={r['measured_direction']:4} "
-              f"(pred {r['predicted_direction']:4} agree={r['agree']} clean={r['clean']} "
-              f"parse_fail={r['parse_fail']}/{2*k})")
+        print(f"{pid} {r['type']:6} qt={r['query_target']} pA={r['pA']} pB={r['pB']} "
+              f"delta={r['delta']:+.2f} -> {r['measured_direction']:4} "
+              f"(pred {r['predicted_direction']:4} agree={r['agree']} clean={r['clean']})")
+        if want and r.get("rawA"):
+            print(f"    [{pid} A CoT] {r['rawA'][:240].replace(chr(10), ' ')}")
     follows = [r for r in rows if r["type"] == "follow"]
     resists = [r for r in rows if r["type"] == "resist"]
     n_foll = sum(r["measured_direction"] != "SAME" for r in follows)
@@ -51,11 +52,6 @@ def run_mode(model, tok, by_id, reasoning, k, temperature, show_raw):
         print("  -> CUE TOO WEAK: strengthen to e.g. 'was confident the answer is (X)'")
     else:
         print("  -> SPLIT PRESENT: cue OK at this strength; proceed to measure all 16")
-    if show_raw:
-        ex = rows[0]
-        for cond in ("A", "B"):
-            t = ex["texts"][cond][0].replace("\n", " ")
-            print(f"    [{ex['pair_id']} {cond}] {t[:240]}")
     return rows
 
 

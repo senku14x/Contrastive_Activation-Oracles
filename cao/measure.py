@@ -1,21 +1,23 @@
 """
 measure.py — behavioral labelling of the Family-C pairs (GPU-only).
 
-Runs the TARGET model (Qwen3-8B, AO adapter DISABLED) on each pair's A/B contexts,
-K samples/condition, parses the emitted MCQ letter, and computes the MEASURED behavioral
-direction. The measured label is ground truth: it re-sorts / discards the predicted labels
-(never relabels them). Used by the pilot and the full Stage-1 measurement.
+Runs the TARGET model (Qwen3-8B, AO adapter DISABLED) on each pair's A/B contexts and
+measures the answer distribution over {A,B,C,D} by FORCED-CHOICE LOGITS (not regex parsing
+of free text — the pilot showed the model answers with words/values, breaking parsing).
 
-Notes:
-- Sampling (temperature>0) is required to estimate the answer distribution; the clean-flip
-  filter then keeps only pairs whose flip is near-deterministic.
-- Reasoning ON: enable_thinking=True; the follow/resist outcome is produced during the CoT
-  (the timing concern). Reasoning OFF: enable_thinking=False; answer commits right after the
-  suffix (the cleaner pre-output read).
+Method:
+- Prefill the assistant turn with "The answer is (" and read next-token logits over the
+  four option letters -> answer distribution. Parse-free; mirrors how we score the oracle.
+- Reasoning OFF: one forward per condition -> exact letter softmax (no sampling needed).
+- Reasoning ON: sample K chains-of-thought, then force-read the post-CoT letter for each ->
+  empirical distribution. (The follow/resist outcome forms during the CoT — the timing point.)
+
+The measured label is ground truth: it re-sorts / discards predicted labels, never relabels.
 """
 
 from __future__ import annotations
 
+import math
 import re
 from collections import Counter
 
@@ -24,21 +26,119 @@ import torch
 from cao import pairs as P
 from cao.ao_runtime import _model_device
 
-# Answer-letter parsers, tried in order of reliability; we take the LAST match (final answer).
+LETTERS = ("A", "B", "C", "D")
+OFF_CUE = "The answer is ("
+ON_CUE = "\n\nThe answer is ("
+
+
+def letter_ids(tok) -> dict[str, list[int]]:
+    """First-token ids for each option letter across no-space/space variants."""
+    out = {}
+    for L in LETTERS:
+        s = set()
+        for v in (L, " " + L):
+            e = tok.encode(v, add_special_tokens=False)
+            if e:
+                s.add(e[0])
+        out[L] = sorted(s)
+    return out
+
+
+@torch.no_grad()
+def _letter_scores(model, tok, prefill_text: str, lids: dict[str, list[int]]) -> dict[str, float]:
+    """logsumexp of next-token logprobs over each letter's variants, at the prefill end."""
+    dev = _model_device(model)
+    enc = tok(prefill_text, return_tensors="pt", add_special_tokens=False).to(dev)
+    out = model(**enc)
+    lp = torch.log_softmax(out.logits[0, -1, :].float(), dim=-1)
+    return {L: float(torch.logsumexp(lp[torch.tensor(lids[L], device=dev)], dim=0)) for L in LETTERS}
+
+
+def _softmax(scores: dict[str, float]) -> dict[str, float]:
+    m = max(scores.values())
+    ex = {k: math.exp(v - m) for k, v in scores.items()}
+    z = sum(ex.values())
+    return {k: v / z for k, v in ex.items()}
+
+
+@torch.no_grad()
+def answer_distribution(model, tok, user_content: str, reasoning: bool, k: int = 8,
+                        temperature: float = 0.7, top_p: float = 0.95, max_new: int = 640,
+                        lids: dict | None = None, want_raw: bool = False) -> dict:
+    """Distribution over {A,B,C,D} for the TARGET (adapter disabled), forced-choice."""
+    lids = lids or letter_ids(tok)
+    if not reasoning:
+        fmt = tok.apply_chat_template([{"role": "user", "content": user_content}],
+                                      tokenize=False, add_generation_prompt=True, enable_thinking=False)
+        with model.disable_adapter():
+            sc = _letter_scores(model, tok, fmt + OFF_CUE, lids)
+        p = _softmax(sc)
+        return {"p": p, "argmax": max(p, key=p.get), "method": "logit", "n": None}
+
+    fmt = tok.apply_chat_template([{"role": "user", "content": user_content}],
+                                  tokenize=False, add_generation_prompt=True, enable_thinking=True)
+    dev = _model_device(model)
+    ins = tok(fmt, return_tensors="pt").to(dev)
+    plen = ins["input_ids"].shape[1]
+    with model.disable_adapter():
+        gen = model.generate(**ins, max_new_tokens=max_new, do_sample=True,
+                             temperature=temperature, top_p=top_p, num_return_sequences=k)
+    counts, raw = Counter(), None
+    for i in range(k):
+        cot = tok.decode(gen[i][plen:], skip_special_tokens=True)
+        if want_raw and raw is None:
+            raw = cot
+        with model.disable_adapter():
+            sc = _letter_scores(model, tok, fmt + cot + ON_CUE, lids)
+        counts[max(sc, key=sc.get)] += 1
+    p = {L: counts.get(L, 0) / k for L in LETTERS}
+    out = {"p": p, "argmax": max(p, key=p.get), "method": "sample+logit", "n": k, "counts": dict(counts)}
+    if want_raw:
+        out["raw"] = raw
+    return out
+
+
+def measure_pair(model, tok, pair: dict, reasoning: bool, k: int = 8, tau: float = 0.5,
+                 temperature: float = 0.7, lids: dict | None = None, want_raw: bool = False) -> dict:
+    """Measure one pair. direction (for query_target X): 'B' if cond B raises P(X) by > tau,
+    'A' if cond A does, else 'SAME'. clean = near-deterministic flip / shared dominant option."""
+    lids = lids or letter_ids(tok)
+    dA = answer_distribution(model, tok, P.target_user_content(pair, "A"), reasoning,
+                             k=k, temperature=temperature, lids=lids, want_raw=want_raw)
+    dB = answer_distribution(model, tok, P.target_user_content(pair, "B"), reasoning,
+                             k=k, temperature=temperature, lids=lids, want_raw=want_raw)
+    qt = pair["query_target"]
+    fA, fB = dA["p"][qt], dB["p"][qt]
+    delta = fB - fA
+    direction = "B" if delta > tau else "A" if delta < -tau else "SAME"
+    domA, domB = max(dA["p"], key=dA["p"].get), max(dB["p"], key=dB["p"].get)
+    if direction == "SAME":
+        clean = (domA == domB) and dA["p"][domA] >= 0.75 and dB["p"][domB] >= 0.75
+    else:
+        clean = abs(delta) >= tau and max(dA["p"].values()) >= 0.75 and max(dB["p"].values()) >= 0.75
+    out = {
+        "pair_id": pair["pair_id"], "type": pair["predicted_type"], "reasoning": reasoning,
+        "query_target": qt, "fA": fA, "fB": fB, "delta": delta,
+        "pA": {k_: round(v, 2) for k_, v in dA["p"].items()},
+        "pB": {k_: round(v, 2) for k_, v in dB["p"].items()},
+        "domA": domA, "domB": domB, "measured_direction": direction,
+        "predicted_direction": pair["predicted_direction"],
+        "agree": direction == pair["predicted_direction"], "clean": clean, "method": dA["method"],
+    }
+    if want_raw:
+        out["rawA"], out["rawB"] = dA.get("raw"), dB.get("raw")
+    return out
+
+
+# Kept only as an optional diagnostic for eyeballing free-text generations; NOT used for labels.
 _ANS_PATTERNS = [
     re.compile(r"(?:answer|option|choose|select|correct)\b[^A-Da-d]{0,15}\(?([ABCD])\)?", re.I),
-    re.compile(r"\*\*\(?([ABCD])\)?\*\*"),      # **A** / **(A)**
-    re.compile(r"\(([ABCD])\)"),                 # (A)
-    re.compile(r"\b([ABCD])\b"),                 # standalone A
+    re.compile(r"\(([ABCD])\)"),
+    re.compile(r"\b([ABCD])\b"),
 ]
 
 
 def parse_letter(text: str):
-    """Best-effort extraction of the committed answer letter (A-D), else None.
-
-    Looks only after </think> when present (so option letters inside the CoT don't count),
-    and prefers explicit 'answer/option' phrasing over a bare letter; takes the last match.
-    """
     seg = text.split("</think>")[-1] if "</think>" in text else text
     seg = seg.strip()
     if len(seg) == 1 and seg.upper() in "ABCD":
@@ -47,77 +147,4 @@ def parse_letter(text: str):
         m = rx.findall(seg)
         if m:
             return m[-1].upper()
-    m = re.findall(r"\b([ABCD])\b", text)  # last-resort: scan everything
-    return m[-1].upper() if m else None
-
-
-@torch.no_grad()
-def target_samples(model, tok, user_content: str, reasoning: bool, k: int = 8,
-                   temperature: float = 0.7, top_p: float = 0.95, max_new: int | None = None):
-    """K sampled completions from the TARGET (adapter disabled)."""
-    if max_new is None:
-        max_new = 640 if reasoning else 16
-    formatted = tok.apply_chat_template(
-        [{"role": "user", "content": user_content}],
-        tokenize=False, add_generation_prompt=True, enable_thinking=reasoning,
-    )
-    dev = _model_device(model)
-    inputs = tok(formatted, return_tensors="pt").to(dev)
-    plen = inputs["input_ids"].shape[1]
-    with model.disable_adapter():
-        gen = model.generate(
-            **inputs, max_new_tokens=max_new, do_sample=True,
-            temperature=temperature, top_p=top_p, num_return_sequences=k,
-        )
-    return [tok.decode(gen[i][plen:], skip_special_tokens=True) for i in range(k)]
-
-
-def measure_pair(model, tok, pair: dict, reasoning: bool, k: int = 8, tau: float = 0.5,
-                 temperature: float = 0.7, keep_texts: bool = True) -> dict:
-    """Measure one pair: letter distributions for A and B, signed delta, measured direction.
-
-    direction (for the pair's query_target X): 'B' if condition B raises P(X) by > tau,
-    'A' if condition A does, else 'SAME'. clean = near-deterministic flip (directional) or
-    same dominant option both sides (null/resist).
-    """
-    letters, texts = {}, {}
-    for cond in ("A", "B"):
-        txts = target_samples(model, tok, P.target_user_content(pair, cond), reasoning,
-                              k=k, temperature=temperature)
-        texts[cond] = txts
-        letters[cond] = [parse_letter(t) for t in txts]
-
-    qt = pair["query_target"]
-
-    def frac(ls):
-        n = sum(1 for x in ls if x is not None)
-        return (sum(1 for x in ls if x == qt) / n) if n else float("nan")
-
-    fA, fB = frac(letters["A"]), frac(letters["B"])
-    domA = Counter(x for x in letters["A"] if x).most_common(1)
-    domB = Counter(x for x in letters["B"] if x).most_common(1)
-    delta = (fB - fA) if (fA == fA and fB == fB) else float("nan")
-    direction = "B" if (delta == delta and delta > tau) else "A" if (delta == delta and delta < -tau) else "SAME"
-
-    # clean-flip: directional => near-deterministic opposite ends; null/resist => same dom both sides
-    def dom_frac(c):
-        cnt = Counter(x for x in letters[c] if x)
-        n = sum(cnt.values())
-        return (cnt.most_common(1)[0][1] / n) if n else 0.0
-    if direction == "SAME":
-        clean = bool(domA and domB and domA[0][0] == domB[0][0] and dom_frac("A") >= 0.75 and dom_frac("B") >= 0.75)
-    else:
-        clean = (delta == delta) and abs(delta) >= tau and dom_frac("A") >= 0.75 and dom_frac("B") >= 0.75
-
-    parse_fail = sum(1 for c in ("A", "B") for x in letters[c] if x is None)
-    out = {
-        "pair_id": pair["pair_id"], "type": pair["predicted_type"], "reasoning": reasoning,
-        "query_target": qt, "fA": fA, "fB": fB, "delta": delta,
-        "domA": domA, "domB": domB, "measured_direction": direction,
-        "predicted_direction": pair["predicted_direction"],
-        "agree": direction == pair["predicted_direction"], "clean": clean,
-        "parse_fail": parse_fail, "letters": letters,
-    }
-    if keep_texts:
-        out["texts"] = texts
-    return out
+    return None
