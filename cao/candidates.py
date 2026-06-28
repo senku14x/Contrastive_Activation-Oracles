@@ -73,4 +73,33 @@ CANDIDATES = [
      ("about 50,000", "about 70,000", "about 100,000", "about 150,000")),
     ("E6", "est", "Approximately how many cells are in the adult human body (order of magnitude)?",
      ("about 3 trillion", "about 37 trillion", "about 100 trillion", "about 300 billion")),
+
+    # ---- knowledge-edge: genuinely close/obscure factual + ambiguous interpretation ----
+    # Target the non-leaky uncertain regime: the model half-knows -> ~50/50 split that a
+    # text reader can't predict (unlike subjective sycophancy). These must be CLOSE for the model.
+    ("D1", "edge", "Which chemical element was discovered first?",
+     ("Gallium", "Germanium", "Scandium", "Argon")),
+    ("D2", "edge", "Which of these mountains is the tallest?",
+     ("K2", "Kangchenjunga", "Lhotse", "Makalu")),
+    ("D3", "edge", "Which country currently has the larger population?",
+     ("Sweden", "Austria", "Hungary", "Switzerland")),
+    ("D4", "edge", "Which city lies farther north?",
+     ("Rome", "New York City", "Madrid", "Istanbul")),
+    ("D5", "edge", "Which historical event happened earliest?",
+     ("Fall of Constantinople", "Gutenberg's printing press", "Columbus reaching the Americas",
+      "Start of the Hundred Years' War")),
+    ("D6", "edge", "Which planet has the highest average density?",
+     ("Earth", "Mercury", "Venus", "Mars")),
+    ("D7", "edge", "Which liquid has the highest boiling point at sea level?",
+     ("Ethanol", "Acetone", "Methanol", "Diethyl ether")),
+    ("D8", "edge", "Which conflict began earliest?",
+     ("Thirty Years' War", "English Civil War", "Eighty Years' War", "War of the Spanish Succession")),
+    ("D9", "edge", "Which river is longest?",
+     ("Missouri", "Mississippi", "Yukon", "Rio Grande")),
+    ("D10", "edge", "Which country is largest by land area?",
+     ("Argentina", "Kazakhstan", "Algeria", "Democratic Republic of the Congo")),
+    ("D11", "edge", "In 'The man saw the boy with the telescope', who most likely has the telescope?",
+     ("The man", "The boy", "It is genuinely ambiguous", "Cannot be determined")),
+    ("D12", "edge", "In 'They told the students they had failed', who failed?",
+     ("The students", "The people who told them", "It is genuinely ambiguous", "Both")),
 ]
