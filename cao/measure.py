@@ -54,6 +54,19 @@ def _letter_scores(model, tok, prefill_text: str, lids: dict[str, list[int]]) ->
     return {L: float(torch.logsumexp(lp[torch.tensor(lids[L], device=dev)], dim=0)) for L in LETTERS}
 
 
+@torch.no_grad()
+def _letter_scores_ids(model, ids_list: list[int], lids: dict[str, list[int]], dev) -> dict[str, float]:
+    """Same as _letter_scores but on an exact token-ID sequence (no decode/re-tokenize).
+
+    Used for reasoning ON: we keep the model's generated token IDs verbatim and append the
+    cue's token IDs, so we score the answer from the exact trajectory the model produced.
+    """
+    enc = torch.tensor([ids_list], device=dev)
+    out = model(input_ids=enc)
+    lp = torch.log_softmax(out.logits[0, -1, :].float(), dim=-1)
+    return {L: float(torch.logsumexp(lp[torch.tensor(lids[L], device=dev)], dim=0)) for L in LETTERS}
+
+
 def _softmax(scores: dict[str, float]) -> dict[str, float]:
     m = max(scores.values())
     ex = {k: math.exp(v - m) for k, v in scores.items()}
@@ -80,16 +93,17 @@ def answer_distribution(model, tok, user_content: str, reasoning: bool, k: int =
     dev = _model_device(model)
     ins = tok(fmt, return_tensors="pt").to(dev)
     plen = ins["input_ids"].shape[1]
+    cue_ids = tok.encode(ON_CUE, add_special_tokens=False)  # appended at TOKEN level (faithful)
     with model.disable_adapter():
         gen = model.generate(**ins, max_new_tokens=max_new, do_sample=True,
                              temperature=temperature, top_p=top_p, num_return_sequences=k)
     counts, raw = Counter(), None
     for i in range(k):
-        cot = tok.decode(gen[i][plen:], skip_special_tokens=True)
+        seq_ids = gen[i].tolist()  # exact prompt+generation token IDs (no decode/re-tokenize)
         if want_raw and raw is None:
-            raw = cot
+            raw = tok.decode(gen[i][plen:], skip_special_tokens=False)  # for eyeballing only
         with model.disable_adapter():
-            sc = _letter_scores(model, tok, fmt + cot + ON_CUE, lids)
+            sc = _letter_scores_ids(model, seq_ids + cue_ids, lids, dev)
         counts[max(sc, key=sc.get)] += 1
     p = {L: counts.get(L, 0) / k for L in LETTERS}
     out = {"p": p, "argmax": max(p, key=p.get), "method": "sample+logit", "n": k, "counts": dict(counts)}

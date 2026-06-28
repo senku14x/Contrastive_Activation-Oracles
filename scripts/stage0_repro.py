@@ -75,11 +75,32 @@ def main() -> int:
     results.append(_ok("extract shape", acts.shape[0] == expected_rows,
                        f"acts {tuple(acts.shape)} (expected rows={expected_rows}, layer-major)"))
 
-    # ---- G3 placeholder location ---------------------------------------------
+    # ---- G3 placeholder location (real validation, not just a count) ----------
+    ph = rt.PLACEHOLDER
+    ph_ids = tok.encode(ph, add_special_tokens=False)
     prefix, char_spans = rt.build_grouped_prefix(layers, len(positions))
-    print(f"        prefix sample: {prefix[:80]!r} ...")
-    g3 = (len(char_spans) == expected_rows)
-    results.append(_ok("G3 placeholders", g3, f"{len(char_spans)} placeholder spans (grouped, layer-major)"))
+    dummy_q = "What domain of reasoning is this?"
+    formatted = tok.apply_chat_template([{"role": "user", "content": prefix + dummy_q}],
+                                        tokenize=False, add_generation_prompt=True, enable_thinking=False)
+    cstart = formatted.index(prefix + dummy_q)
+    enc = tok(formatted, add_special_tokens=False, return_offsets_mapping=True)
+    offs, iids = enc["offset_mapping"], enc["input_ids"]
+    locs = []
+    for rel_s, rel_e in char_spans:
+        a, b = cstart + rel_s, cstart + rel_e
+        hit = [i for i, (ts, te) in enumerate(offs) if ts < b and te > a]
+        locs.append(hit[0] if hit else None)
+    q_abs = cstart + len(prefix)                       # query begins right after the prefix
+    first_q_tok = min((i for i, (ts, te) in enumerate(offs) if ts >= q_abs), default=len(iids))
+    located = [x for x in locs if x is not None]
+    ids_at = [iids[x] for x in located]
+    ok_count = len(located) == expected_rows
+    ok_ids = (len(ph_ids) == 1) and all(i == ph_ids[0] for i in ids_at)   # every located token IS ' ?'
+    ok_before_q = all(x < first_q_tok for x in located)                   # none in the chat/gen header
+    g3 = ok_count and ok_ids and ok_before_q
+    print(f"        prefix sample: {prefix[:72]!r} ...; located tokens decode to {tok.decode(ids_at)!r}")
+    results.append(_ok("G3 placeholders", g3,
+                       f"located {len(located)}/{expected_rows}, all=='{ph}'(id {ph_ids})={ok_ids}, before_query={ok_before_q}"))
 
     # ---- G4 extraction depends on adapter state ------------------------------
     with model.disable_adapter():

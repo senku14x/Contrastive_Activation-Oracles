@@ -85,10 +85,11 @@ def test_dh_geometry_asymmetric():
             B[i] += rng.normal(scale=0.01, size=(nL, nP, d)); labels.append("null")
     geo = ck.dh_geometry(A, B, labels, pca_k=3, run_cv=True)
     rec = geo[0]
-    assert rec["mean_norm_null"] < rec["mean_norm_dir"], rec   # null dH smaller than directional
+    nb = rec["mean_norm_by_label"]                              # per-label ||dH|| (no null=small assumption)
+    assert nb["null"] < nb["follow"] and nb["null"] < nb["resist"]  # this synthetic null IS small by construction
     cv = rec["loo_cv_reduced"]
     assert cv is None or (0.0 <= cv <= 1.0)                    # runs & returns sane value
-    print(f"  ok dh_geometry (null={rec['mean_norm_null']:.2f} < dir={rec['mean_norm_dir']:.2f}, cv={cv})")
+    print(f"  ok dh_geometry (by_label={ {k: round(v, 1) for k, v in nb.items()} }, cv={cv})")
 
 
 if __name__ == "__main__":

@@ -216,11 +216,15 @@ def dh_geometry(acts_A, acts_B, labels, layer_names=None, pca_k=3, run_cv=True):
         name = (layer_names or list(range(nL)))[li]
         X = dH[:, li, :]                          # [n, d]
         norms = np.linalg.norm(X, axis=1)
-        # null pairs should have SMALL ||dH||; directional pairs larger. Report the contrast.
-        is_null = np.isin(labels, ["null", "SAME"])
+        # Report ||dH|| per label group WITHOUT assuming any group is small. A resist pair is
+        # hint-present-but-behavior-unchanged, so its ||dH|| can/should be LARGE (the hint is
+        # represented); max-difference neutral nulls (N3/N4) are large by design; only
+        # minimal-difference neutral nulls (N1/N2) are expected small. ||dH|| magnitude is
+        # therefore descriptive, NOT a disposition signal. The disposition view is the
+        # follow-vs-resist separation below (hint-presence controlled).
         rec = {"mean_norm_all": float(norms.mean()),
-               "mean_norm_null": float(norms[is_null].mean()) if is_null.any() else None,
-               "mean_norm_dir": float(norms[~is_null].mean()) if (~is_null).any() else None}
+               "mean_norm_by_label": {str(l): float(norms[labels == l].mean())
+                                      for l in np.unique(labels)}}
         # reduce, then look (and optionally CV) — only where n > k.
         Xc = X - X.mean(0)
         k = min(pca_k, n - 1, d)
@@ -252,14 +256,14 @@ def _loocv_logreg(Z, labels):
     return float(balanced_accuracy_score(y[mask], preds[mask])) if mask.any() else float("nan")
 
 def interpret_geometry(geo):
-    print("[3] dH geometry — ASYMMETRIC reading:")
-    print("    NULL  (no separation, dir~null norms, reduced-CV ~chance) => trustworthy KILL "
-          "switch: a lossy AO almost certainly can't read what full linear decoding can't "
-          "(caveat: nonlinear signal).")
-    print("    POSITIVE at this N is NOT a green light (overfit risk). Promote via more pairs.")
+    print("[3] dH geometry — VISUALIZATION ONLY (NOT a negative license):")
+    print("    A null here = no separation in the top-few PCs of mean-pooled dH. It does NOT rule")
+    print("    out an AO-readable signal (could be low-variance, position-specific, or nonlinear).")
+    print("    Disposition view = follow-vs-resist separation (hint-presence controlled); resist and")
+    print("    max-difference-null ||dH|| can be large and that is expected, not a red flag.")
     for name, rec in geo.items():
         cv = rec.get("loo_cv_reduced")
-        print(f"    layer {name}: ||dH|| dir={rec['mean_norm_dir']}, null={rec['mean_norm_null']}, "
+        print(f"    layer {name}: ||dH|| by label={rec['mean_norm_by_label']}, "
               f"reduced-CV={cv if cv is not None else 'skipped (n<=k)'}")
 
 
@@ -269,5 +273,8 @@ if __name__ == "__main__":
     except ImportError:
         print("[1] transformers not installed — section [1] needs it; [2]/[3] do not.")
     print("[2] parity baseline + [3] geometry: import and call once AO + activations are wired.")
-    print("    Decisive comparison: max(joint, delta) vs parity_direction, balanced_accuracy,")
-    print("    shuffle as the content-sensitivity gate (NOT swap).")
+    print("    Decisive comparison (Stage 2, revised hierarchy): JOINT is the sole primary method")
+    print("    vs parity_direction (balanced accuracy); delta-only is secondary on directional cells.")
+    print("    shuffle is the content-sensitivity gate (NOT swap). NOTE: joint labels SAME/UNCERTAIN")
+    print("    are multi-token -> use full-sequence scoring or verified single-token labels, not")
+    print("    first-token logsumexp; and do not collapse low A/B margin into SAME (report separately).")

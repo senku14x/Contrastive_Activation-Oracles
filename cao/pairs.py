@@ -116,7 +116,8 @@ def target_user_content(pair: dict, condition: str) -> str:
     """User-turn content for the TARGET model: context (c) + SEP + shared suffix (s).
 
     condition: 'A' (filler / no-hint) or 'B' (hint / second-filler for nulls).
-    NOTE: contexts are not yet padded to a common L; see scripts/verify_pairs.py.
+    Contexts are reworded to a common token length L (verified by scripts/verify_pairs.py:
+    suffix-start == [18] for all pairs/conditions), so invariant 1 holds.
     """
     c = pair["context_A"] if condition == "A" else pair["context_B"]
     return c + SEP + suffix_for(pair)
