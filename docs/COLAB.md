@@ -1,5 +1,17 @@
 # Colab runbook — Stage 1 (yield probe) + Stage 1.5 (existence gate)
 
+> **On Vast.ai / RunPod / any raw GPU box (not Colab):** skip Cell 1 (no `google.colab`). Use shell:
+> ```bash
+> git clone https://github.com/senku14x/Contrastive_Activation-Oracles.git
+> cd Contrastive_Activation-Oracles && git checkout claude/mechanistic-interpretability-qditqg
+> pip install -U "transformers>=4.55,<5" "peft>=0.17,<0.19" accelerate "scikit-learn>=1.3" requests huggingface_hub
+> export HF_TOKEN=hf_...            # then: huggingface-cli login --token "$HF_TOKEN"
+> export GATE_API_KEY=sk-or-...     # OpenRouter, for the text gate
+> export GATE_MODEL=z-ai/glm-4.6
+> # then run the scripts from Cells 3,4,5,6 directly (drop the leading `!`)
+> ```
+> Everything below is reproducible from a fresh clone — no need to preserve any generated files.
+
 Copy each cell into a Colab notebook on an **A100 (High-RAM)** runtime, in order. Cells 0–9 need only
 the model (your HF login); the text gate (cell 10) needs an external reader API; cells 11–13 finish the
 existence gate. All `python` scripts must run from the repo root (the `%cd` in cell 2 handles that).
