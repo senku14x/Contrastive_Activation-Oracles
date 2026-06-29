@@ -49,15 +49,15 @@ login(userdata.get('HF_TOKEN'))
 ```
 
 ```python
-# Cell 6 — build the candidate set + structural ablation flag (no model)
+# Cell 6 — build candidates -> pad to equal within-pair length -> structural ablation flag
 !python scripts/build_candidates.py
+!python scripts/pad_to_equal_length.py      # neutral prefix pad so c_A/c_B token lengths match (needs tokenizer)
 !python scripts/ablation_verify.py
 ```
 
 ```python
-# Cell 7 — token invariants (needs the tokenizer). Read the output:
-#   any LENGTH/SUFFIX mismatch must be reworded in cao/family_l.py before extraction (cells 11-13).
-#   Measurement (cells 8-9) is fine to run regardless.
+# Cell 7 — token invariants (needs the tokenizer). After padding this should pass within-pair;
+#   if a few items are still STUCK, paste them back and they'll be reworded. Measurement is fine regardless.
 !python scripts/verify_token_invariants.py
 ```
 

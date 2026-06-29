@@ -60,7 +60,7 @@ def main() -> int:
     nL = sum(r["family"] == "L" for r in recs)
     nP = sum(r["family"] == "P" for r in recs)
     print(f"wrote {len(recs)} candidate records to {a.out}  (L={nL}, P={nP})")
-    print("next: scripts/ablation_verify.py (sets load-bearing flag, no model) -> "
+    print("next: scripts/pad_to_equal_length.py (tokenizer) -> ablation_verify.py (no model) -> "
           "verify_token_invariants.py (tokenizer) -> measure_target_logits.py (GPU)")
     return 0
 
