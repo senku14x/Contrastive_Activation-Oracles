@@ -33,7 +33,6 @@ def _records():
         )
     # Family P (validation shakedown): one record per (item, template).
     for rid, it, tpl in P.enumerate_pairs():
-        cond = P.conditions(it, tpl)  # uses dataset.user_content; we want the raw context, so rebuild
         _, weak, strong = tpl
         w = it["wrong_option"]
         suffix = P.suffix_for(it)
