@@ -1,0 +1,26 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+*.egg-info/
+# activation caches / experiment outputs
+*.npy
+*.npz
+*.pt
+*.safetensors
+acts_cache/
+results/
+wandb/
+.ipynb_checkpoints/
+
+# GPU/model-produced data outputs (reproducible on Colab; commit only the candidate snapshot)
+data/candidates_measured.jsonl
+data/candidates_labeled.jsonl
+data/candidates_gated.jsonl
+data/feasibility_frozen.jsonl
+data/activations_meta.json
+data/text_only_gate.json
+data/sft_*.jsonl
+runs/
+data/candidates_unfiltered.jsonl
