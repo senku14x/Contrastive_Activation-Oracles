@@ -170,8 +170,12 @@ def main() -> int:
     print("\n=== verdict (non-Qwen conservative reader) ===")
     for fam in fams:
         bal = family_disc.get(fam, float("nan"))
-        verdict = ("NON-LEAKY (reader at chance)" if bal <= a.disc_thr else "LEAKY (reader discriminates)")
-        print(f"  Family {fam}: balanced_acc={bal:.2f} -> {verdict}  "
+        nclass = len({truth_of[r["candidate_id"]] for r in clean if r["family"] == fam})
+        if nclass < 2:
+            verdict = "N/A (only one behavioral class -> discrimination undefined, not 'non-leaky')"
+        else:
+            verdict = "NON-LEAKY (reader at chance)" if bal <= a.disc_thr else "LEAKY (reader discriminates)"
+        print(f"  Family {fam}: balanced_acc={bal:.2f} ({nclass} class) -> {verdict}  "
               f"({sum(1 for r in clean if r['family']==fam and by_id[r['candidate_id']])}/"
               f"{sum(1 for r in clean if r['family']==fam)} items kept)")
     print("NOTE: at this n the verdict is preliminary; confirm on the scaled set (and with a 2nd reader).")
