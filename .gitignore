@@ -23,3 +23,4 @@ data/activations_meta.json
 data/text_only_gate.json
 data/sft_*.jsonl
 runs/
+data/candidates_unfiltered.jsonl
