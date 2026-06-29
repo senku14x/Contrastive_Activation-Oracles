@@ -112,6 +112,25 @@ def answer_distribution(model, tok, user_content: str, reasoning: bool, k: int =
     return out
 
 
+@torch.no_grad()
+def answer_distribution_nocue(model, tok, user_content: str, lids: dict | None = None) -> dict:
+    """§10 OFF readout: letter distribution at the FIRST answer position, NO appended cue.
+
+    The answer commitment lives in the suffix ("Answer with exactly one letter:"); we read the
+    next-token distribution right after the chat template's generation prompt — i.e. the EXACT
+    pre-output state activations are extracted from (scripts/extract_activations.py). This is the
+    spec-v4 §10 readout: it labels the stored state, unlike answer_distribution(OFF) which appends
+    "The answer is (" and thereby labels a different state. Adapter disabled (pure target behavior).
+    """
+    lids = lids or letter_ids(tok)
+    fmt = tok.apply_chat_template([{"role": "user", "content": user_content}],
+                                  tokenize=False, add_generation_prompt=True, enable_thinking=False)
+    with model.disable_adapter():
+        sc = _letter_scores(model, tok, fmt, lids)
+    p = _softmax(sc)
+    return {"p": p, "argmax": max(p, key=p.get), "method": "logit-nocue", "n": None}
+
+
 def measure_pair(model, tok, pair: dict, reasoning: bool, k: int = 8, tau: float = 0.5,
                  temperature: float = 0.7, lids: dict | None = None, want_raw: bool = False) -> dict:
     """Measure one pair. direction (for query_target X): 'B' if cond B raises P(X) by > tau,
