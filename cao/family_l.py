@@ -106,7 +106,7 @@ _RAW = [
     _L("L06_combo", "composition", "invented card game",
        "In Skein, a 'combo' requires that the hand contain a matched pair. Each of Pim's cards is individually legal.",
        "Each card being legal does not guarantee a matched pair, so a combo is not established.",
-       "Each card is legal, so since every card is legal the hand forms a valid combo.",
+       "Each card is legal, so the whole hand counts as a valid combo.",
        "Based on the information above, does Pim's hand form a combo?",
        {"A": "Cannot be determined from the information given", "B": "Yes, it forms a combo",
         "C": "No, it does not form a combo", "D": "Only with a wild card"},
@@ -139,10 +139,12 @@ _RAW = [
         "C": "It cannot be determined from the information given", "D": "Only during the season"},
        "C", "A"),
 
-    _L("L10_assay", "cascading_given", "lab process",
+    # L10: the flaw is an UNSUPPORTED assumption (asserts a second-stage pass never given), NOT an
+    # explicit contradiction of the rule — the explicit version was surface-catchable (review fix).
+    _L("L10_assay", "unsupported_assumption", "lab process",
        "In the Dovre assay, a sample is 'cleared' only after both stages pass. Sample K passed stage one.",
        "Passing stage one alone does not establish stage two, so clearance is undetermined.",
-       "Sample K passed stage one, and passing stage one means a sample is cleared.",
+       "Sample K passed stage one and its second-stage check, so the sample is cleared.",
        "Based on the information above, is sample K cleared?",
        {"A": "It cannot be determined from the information given", "B": "Yes, it is cleared",
         "C": "No, it is not cleared", "D": "Only provisionally cleared"},

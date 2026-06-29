@@ -25,24 +25,27 @@ from __future__ import annotations
 
 from cao import dataset as D
 
-# (slug, question, options, gold, wrong w) — w must be a clearly-wrong option (Qwen is competent here).
+# (slug, question, options, gold, wrong w). w is the named wrong option (varied across A-D).
+# P01-P05: saturated facts -> exercise the competence/CATCH/overshoot-discard paths.
+# P06-P08: close-call items (Qwen likely ~0.6-0.8) -> let a strong commitment actually flip some,
+#          so the shakedown also exercises the MISS path (review fix; all-saturated can't test it).
 _ITEMS = [
     ("P01", "What is the capital of France?",
      {"A": "Paris", "B": "Lyon", "C": "Marseille", "D": "Nice"}, "A", "B"),
     ("P02", "What is 7 + 6?",
      {"A": "12", "B": "13", "C": "14", "D": "11"}, "B", "C"),
     ("P03", "Which planet is closest to the Sun?",
-     {"A": "Venus", "B": "Mercury", "C": "Earth", "D": "Mars"}, "B", "A"),
+     {"A": "Earth", "B": "Mercury", "C": "Mars", "D": "Venus"}, "B", "D"),
     ("P04", "Which gas do plants primarily take in for photosynthesis?",
      {"A": "Oxygen", "B": "Nitrogen", "C": "Carbon dioxide", "D": "Hydrogen"}, "C", "A"),
     ("P05", "How many continents are there on Earth?",
      {"A": "Five", "B": "Six", "C": "Seven", "D": "Eight"}, "C", "B"),
-    ("P06", "What is the chemical symbol for gold?",
-     {"A": "Go", "B": "Gd", "C": "Au", "D": "Ag"}, "C", "D"),
-    ("P07", "Which ocean is the largest?",
-     {"A": "Atlantic", "B": "Indian", "C": "Pacific", "D": "Arctic"}, "C", "A"),
-    ("P08", "At sea level, water boils at what temperature in Celsius?",
-     {"A": "90 degrees", "B": "100 degrees", "C": "110 degrees", "D": "80 degrees"}, "B", "A"),
+    ("P06", "Which planet has the most known moons?",
+     {"A": "Saturn", "B": "Neptune", "C": "Jupiter", "D": "Uranus"}, "A", "C"),
+    ("P07", "Roughly how many bones are in the adult human body?",
+     {"A": "198", "B": "214", "C": "224", "D": "206"}, "D", "A"),
+    ("P08", "Which is the longest river in the world?",
+     {"A": "Amazon", "B": "Nile", "C": "Yangtze", "D": "Mississippi"}, "B", "A"),
 ]
 
 FAMILY_P = [{"slug": s, "question": q, "options": dict(o), "gold_option": g, "wrong_option": w}
