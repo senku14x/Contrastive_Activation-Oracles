@@ -42,9 +42,12 @@ def main() -> int:
     ap.add_argument("--out", default="data/candidates_measured.jsonl")
     ap.add_argument("--on", action="store_true", help="add reasoning-ON cross-check (slow)")
     ap.add_argument("--k", type=int, default=32, help="ON samples per condition")
+    ap.add_argument("--family", default="all", choices=["L", "P", "all"], help="measure only this family")
     a = ap.parse_args()
 
     recs = [json.loads(l) for l in open(a.candidates)]
+    if a.family != "all":
+        recs = [r for r in recs if r["family"] == a.family]
     model, tok = rt.load_oracle()
     lids = M.letter_ids(tok)
     print(f"measuring {len(recs)} candidates (OFF no-cue{'+ON cross-check' if a.on else ''})")
