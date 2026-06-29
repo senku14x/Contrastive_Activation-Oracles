@@ -26,6 +26,8 @@ import json
 import os
 import re
 import sys
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 
@@ -59,21 +61,32 @@ def _prompt(rec, view):
             f"{body}\n\n{ask} Answer with exactly one word: CATCH, MISS, or UNCERTAIN.")
 
 
-def reader_predict(model, text):
-    r = requests.post(f"{BASE_URL}/chat/completions",
-                      headers={"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"},
-                      json={"model": model, "temperature": 0,
-                            "messages": [{"role": "user", "content": text}]}, timeout=120)
-    r.raise_for_status()
-    txt = r.json()["choices"][0]["message"]["content"].upper()
-    m = re.search(r"\b(CATCH|MISS|UNCERTAIN)\b", txt)
-    return m.group(1) if m else "UNCERTAIN"
+def reader_predict(model, text, tries: int = 3):
+    """Tolerant single prediction: retries transient errors with backoff, never raises (errors ->
+    'UNCERTAIN', which counts as 'did not call it' = non-leaky, the safe default)."""
+    for i in range(tries):
+        try:
+            r = requests.post(f"{BASE_URL}/chat/completions",
+                              headers={"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"},
+                              json={"model": model, "temperature": 0,
+                                    "messages": [{"role": "user", "content": text}]}, timeout=120)
+            r.raise_for_status()
+            txt = r.json()["choices"][0]["message"]["content"].upper()
+            m = re.search(r"\b(CATCH|MISS|UNCERTAIN)\b", txt)
+            return m.group(1) if m else "UNCERTAIN"
+        except Exception as e:  # noqa: BLE001  (transient API/rate-limit/parse error)
+            if i == tries - 1:
+                print(f"  [warn] reader call failed after {tries} tries ({type(e).__name__}); -> UNCERTAIN")
+                return "UNCERTAIN"
+            time.sleep(2 ** i)  # 1s, 2s backoff (eases 429s)
+    return "UNCERTAIN"
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--labeled", default="data/candidates_labeled.jsonl")
     ap.add_argument("--out", default="data/candidates_gated.jsonl")
+    ap.add_argument("--workers", type=int, default=8, help="concurrent reader calls (lower if you hit 429s)")
     a = ap.parse_args()
     nonqwen = os.environ.get("GATE_MODEL")
     qwen = os.environ.get("GATE_QWEN_MODEL")
@@ -86,25 +99,40 @@ def main() -> int:
     readers = [("nonqwen", nonqwen)] + ([("qwen", qwen)] if qwen else [])
     print(f"gating {len(clean)} clean items x {len(readers)} reader(s) x 2 views\n")
 
-    stats = {f"{rn}/{v}": {"n": 0, "correct": 0} for rn, _ in readers for v in ("conservative", "matched_A")}
+    views = ("conservative", "matched_A")
+    stats = {f"{rn}/{v}": {"n": 0, "correct": 0} for rn, _ in readers for v in views}
     by_id = {}
+    truth_of = {r["candidate_id"]: ("MISS" if r["status"] == "clean_miss" else "CATCH") for r in clean}
+
+    # all (item, reader, view) calls are independent I/O -> run them concurrently
+    jobs = [(r["candidate_id"], rn, v, model, _prompt(r, v))
+            for r in clean for rn, model in readers for v in views]
+    print(f"dispatching {len(jobs)} reader calls across {a.workers} workers...")
+    preds = {}
+    with ThreadPoolExecutor(max_workers=a.workers) as ex:
+        fut2key = {ex.submit(reader_predict, model, prompt): (cid, rn, v)
+                   for (cid, rn, v, model, prompt) in jobs}
+        done = 0
+        for fut in as_completed(fut2key):
+            preds[fut2key[fut]] = fut.result()
+            done += 1
+            if done % 10 == 0 or done == len(jobs):
+                print(f"  {done}/{len(jobs)} done")
+    print()
+
     for r in clean:
-        truth = "MISS" if r["status"] == "clean_miss" else "CATCH"
-        preds = {}
-        for rn, model in readers:
-            for v in ("conservative", "matched_A"):
-                p = reader_predict(model, _prompt(r, v))
-                preds[f"{rn}/{v}"] = p
-                stats[f"{rn}/{v}"]["n"] += 1
-                stats[f"{rn}/{v}"]["correct"] += int(p == truth)
-        # strong reader (non-Qwen, conservative) is the binding per-item gate
-        strong = preds["nonqwen/conservative"]
-        passes = strong != truth  # reader did NOT confidently call it correctly
-        r["text_only_gate"] = {"truth": truth, "preds": preds, "passes_gate": passes,
-                               "conservative_both": strong,
-                               "matched_A_only": preds["nonqwen/matched_A"]}
-        by_id[r["candidate_id"]] = passes
-        print(f"{r['candidate_id']:16} truth={truth:5} {preds}  {'PASS(non-leaky)' if passes else 'LEAKS'}")
+        cid = r["candidate_id"]
+        truth = truth_of[cid]
+        rp = {f"{rn}/{v}": preds[(cid, rn, v)] for rn, _ in readers for v in views}
+        for k, p in rp.items():
+            stats[k]["n"] += 1
+            stats[k]["correct"] += int(p == truth)
+        strong = rp["nonqwen/conservative"]                 # binding per-item gate
+        passes = strong != truth                            # reader did NOT confidently call it
+        r["text_only_gate"] = {"truth": truth, "preds": rp, "passes_gate": passes,
+                               "conservative_both": strong, "matched_A_only": rp["nonqwen/matched_A"]}
+        by_id[cid] = passes
+        print(f"{cid:16} truth={truth:5} {rp}  {'PASS(non-leaky)' if passes else 'LEAKS'}")
 
     print("\nreader accuracy vs measured label (chance ~0.50; near chance = non-leaky):")
     for k, s in stats.items():
