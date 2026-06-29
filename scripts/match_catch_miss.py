@@ -31,15 +31,22 @@ def _summ(xs):
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--gated", default="data/candidates_gated.jsonl")
+    ap.add_argument("--gated", default="data/candidates_gated.jsonl",
+                    help="for --require-gate false, point this at data/candidates_labeled.jsonl")
     ap.add_argument("--out", default="data/feasibility_frozen.jsonl")
     ap.add_argument("--family", default="L", choices=["L", "P", "all"])
+    ap.add_argument("--require-gate", dest="require_gate", choices=["true", "false"], default="true",
+                    help="false = use ALL clean items (gate NOT applied) for a pipeline dry-run / yield")
     a = ap.parse_args()
+    require = a.require_gate == "true"
 
     recs = [json.loads(l) for l in open(a.gated)]
     sel = [r for r in recs if r["status"] in ("clean_miss", "clean_catch")
-           and r.get("text_only_gate", {}).get("passes_gate", False)
-           and (a.family == "all" or r["family"] == a.family)]
+           and (a.family == "all" or r["family"] == a.family)
+           and (not require or r.get("text_only_gate", {}).get("passes_gate", False))]
+    if not require:
+        print("** --require-gate false: using ALL clean items, text gate NOT applied. The existence-gate "
+              "result is NOT valid for the claim — pipeline dry-run / yield only.\n")
     miss = [r for r in sel if r["status"] == "clean_miss"]
     catch = [r for r in sel if r["status"] == "clean_catch"]
     print(f"gate-passing clean items (family={a.family}): MISS={len(miss)} CATCH={len(catch)}")
