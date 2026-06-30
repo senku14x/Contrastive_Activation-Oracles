@@ -79,23 +79,24 @@ Also flagged: the 4 catches are **systematically longer prompts** (431 vs 408 ch
 
 ## THE OPEN DECISION (this is what we're on)
 
-We need ~**15 catches** for a defensible probe (we have 4). At the ~18% catch rate that's ~**120 more
-items**. Three paths:
+We need ~**15 catches** for a defensible probe (we have 4). At the ~20% catch rate that's ~**120 more
+items**.
 
-- **A — Scale (the direct answer).** Bulk-author ~120 Family-L items (volume, not cleverness — catch
-  is Qwen's disposition, comes at ~18% regardless of author) → harvest ~15 catches → real probe. This
-  is the **generate-and-verify workflow's** job (hand-authoring 120 is too many). Workflow infra has
-  failed twice; would retry.
-- **B — Cheap shortcut first (recommended).** Test whether **reasoning-ON** raises the catch rate
-  toward ~50% (PCBench: deliberation lifts flaw-critique ~20%→~60%). If so, we get a powered, balanced
-  set from the existing 32 — no 120-item slog (question reframes to "does the pre-output state
-  *foreshadow* the reasoned catch/miss"). One Colab run:
-  `python scripts/measure_target_logits.py --on --family L --k 16 --out data/measured_on_L.jsonl`
-  then compute catch rate from `on_cross_check.flawed_letter_counts`.
-- **C — Bank it.** Write up the real behavioral finding (*Qwen follows fallacious bridges ~82%, and
-  that split is non-leaky/idiosyncratic*) + the underpowered probe as a documented limitation.
+- **B — reasoning-ON shortcut — TESTED, RULED OUT (2026-06-30).** ON catch rate = **7/32 = 22%** ≈ the
+  OFF 18%. Plain CoT does *not* balance the classes (consistent with PCBench: only an explicit
+  "check the premises" instruction lifts critique, and we don't add one — it collapses the gap). So the
+  ~20% catch rate is **robust across OFF/ON**; there is no cheap shortcut to power.
 
-**Recommended:** B, then A if ON doesn't balance it; C is legitimate to stop.
+Remaining paths:
+- **A — Scale (completes the registered experiment).** Bulk-author ~100–120 Family-L items (volume, not
+  cleverness — catch is Qwen's disposition at ~20% regardless of author) → harvest ~15 catches → the
+  real probe. Authoring is the **generate-and-verify workflow's** job (sandbox; workflow infra failed
+  twice, would retry). A *powered* result — even a null — is the spec's intended deliverable.
+- **C — Bank it.** Write up the real behavioral finding (*Qwen follows fallacious "therefore" bridges
+  ~80% OFF and ON, and that catch/miss split is non-leaky*) + the underpowered probe + build-yield as a
+  documented supply constraint. Partial (doesn't answer the existence question) but honest and complete.
+
+**Now: A (complete the experiment; authoring cost is the workflow's, not the user's) vs C (stop here).**
 
 ---
 
