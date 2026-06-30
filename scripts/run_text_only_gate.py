@@ -62,6 +62,7 @@ def _prompt(rec, view):
 
 
 TIMEOUT = 45   # per-call seconds; set from --timeout in main(). Short so stragglers fail-fast.
+MAXTOK = 24    # cap reader output; the answer is ONE word, so this is the big latency win.
 
 
 def reader_predict(model, text, tries: int = 2):
@@ -72,7 +73,7 @@ def reader_predict(model, text, tries: int = 2):
         try:
             r = requests.post(f"{BASE_URL}/chat/completions",
                               headers={"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"},
-                              json={"model": model, "temperature": 0,
+                              json={"model": model, "temperature": 0, "max_tokens": MAXTOK,
                                     "messages": [{"role": "user", "content": text}]}, timeout=TIMEOUT)
             r.raise_for_status()
             txt = r.json()["choices"][0]["message"]["content"].upper()
@@ -107,9 +108,11 @@ def main() -> int:
     ap.add_argument("--disc-thr", dest="disc_thr", type=float, default=0.65,
                     help="balanced-acc above which the reader is judged to DISCRIMINATE (family leaks)")
     ap.add_argument("--timeout", type=int, default=45, help="per reader-call seconds (stragglers fail-fast)")
+    ap.add_argument("--max-tokens", dest="max_tokens", type=int, default=24,
+                    help="cap reader output tokens (answer is one word; small = much faster)")
     a = ap.parse_args()
-    global TIMEOUT
-    TIMEOUT = a.timeout
+    global TIMEOUT, MAXTOK
+    TIMEOUT, MAXTOK = a.timeout, a.max_tokens
     nonqwen = os.environ.get("GATE_MODEL")
     qwen = os.environ.get("GATE_QWEN_MODEL")
     if not (API_KEY and nonqwen):
