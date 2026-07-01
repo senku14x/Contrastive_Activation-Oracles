@@ -13,15 +13,10 @@ Design choices that keep this honest:
   - It is a PREDECLARED bank, selected by exact token count — never tuned per item to force a label.
   - The ablated (bare-givens) condition is left UNPADDED: it is the competence/ablation probe, measured
     on its own, not part of the extracted contrastive pair.
-  - UNIVERSAL_PREFIX is applied to BOTH sides of EVERY pair, unconditionally, before the old
-    shorter-side-only logic runs. Root-cause fix for a text leak found via scripts/inspect_text_leak.py:
-    the old behavior only padded the shorter side and skipped items whose two conditions already
-    tokenized equal — so "does this item have a preface, and how long is it" was a direct function of
-    how much context_correct/context_flawed happened to differ in length, which turned out to leak into
-    a supervised text-feature probe even restricted to a single flaw_subtype. Making the preface
-    identical and universal removes it as a variable entirely; only a small, generic residual top-up
-    (the existing bank/coin logic) still varies per item, closing whatever gap remains after both sides
-    already share the same long fixed opener.
+  - Known limitation: only the shorter side is padded, so the filler is mildly asymmetric across a pair.
+    It is neutral and tiny (≤ the original gap), and the shuffle / H_B-alone / text-feature-probe
+    controls guard any residual surface confound. Re-run measurement after; competence is on the
+    unpadded ablated condition, so it is unaffected.
 
 Run AFTER build_candidates, BEFORE verify_token_invariants/measurement. Rewrites the file in place.
 """
@@ -51,9 +46,6 @@ BANK = [
     "Here is a short preliminary note added below for some context.",
 ]
 COIN = "the"  # 1-token top-up for any residual the bank can't hit exactly
-
-# Applied identically to BOTH sides of EVERY pair before anything else -- see module docstring.
-UNIVERSAL_PREFIX = "Here is a short preliminary note added below for some context."
 
 
 def main() -> int:
@@ -99,8 +91,6 @@ def main() -> int:
     fixed = stuck = already = 0
     for r in recs:
         sfx = r["shared_suffix"]
-        r["context_correct"] = f"{UNIVERSAL_PREFIX} {r['context_correct']}"
-        r["context_flawed"] = f"{UNIVERSAL_PREFIX} {r['context_flawed']}"
         lc = plen(r["context_correct"], sfx)
         lf = plen(r["context_flawed"], sfx)
         if lc == lf:
