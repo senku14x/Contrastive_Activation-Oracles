@@ -61,15 +61,23 @@ def _prompt(rec, view):
             f"{body}\n\n{ask} Answer with exactly one word: CATCH, MISS, or UNCERTAIN.")
 
 
-def reader_predict(model, text, tries: int = 3):
-    """Tolerant single prediction: retries transient errors with backoff, never raises (errors ->
-    'UNCERTAIN', which counts as 'did not call it' = non-leaky, the safe default)."""
+TIMEOUT = 45   # per-call seconds; set from --timeout in main(). Short so stragglers fail-fast.
+MAXTOK = 24    # cap reader output; the answer is ONE word, so this is the big latency win.
+
+
+def reader_predict(model, text, tries: int = 2):
+    """Tolerant single prediction: short timeout + a couple retries, never raises (errors ->
+    'UNCERTAIN', which counts as 'did not call it' = non-leaky, the safe default). The short timeout
+    keeps the tail from crawling on 120s hangs — a slow/rate-limited call just resolves to UNCERTAIN."""
     for i in range(tries):
         try:
             r = requests.post(f"{BASE_URL}/chat/completions",
                               headers={"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"},
-                              json={"model": model, "temperature": 0,
-                                    "messages": [{"role": "user", "content": text}]}, timeout=120)
+                              json={"model": model, "temperature": 0, "max_tokens": MAXTOK,
+                                    "reasoning": {"enabled": False},  # hybrid readers (DeepSeek V3.1+,
+                                    # some Gemini/GLM modes) default to thinking-on via OpenRouter unless
+                                    # told otherwise -> would burn MAXTOK on CoT, never emit the answer word.
+                                    "messages": [{"role": "user", "content": text}]}, timeout=TIMEOUT)
             r.raise_for_status()
             txt = r.json()["choices"][0]["message"]["content"].upper()
             m = re.search(r"\b(CATCH|MISS|UNCERTAIN)\b", txt)
@@ -78,7 +86,7 @@ def reader_predict(model, text, tries: int = 3):
             if i == tries - 1:
                 print(f"  [warn] reader call failed after {tries} tries ({type(e).__name__}); -> UNCERTAIN")
                 return "UNCERTAIN"
-            time.sleep(2 ** i)  # 1s, 2s backoff (eases 429s)
+            time.sleep(1.5)
     return "UNCERTAIN"
 
 
@@ -102,7 +110,12 @@ def main() -> int:
     ap.add_argument("--workers", type=int, default=8, help="concurrent reader calls (lower if you hit 429s)")
     ap.add_argument("--disc-thr", dest="disc_thr", type=float, default=0.65,
                     help="balanced-acc above which the reader is judged to DISCRIMINATE (family leaks)")
+    ap.add_argument("--timeout", type=int, default=45, help="per reader-call seconds (stragglers fail-fast)")
+    ap.add_argument("--max-tokens", dest="max_tokens", type=int, default=24,
+                    help="cap reader output tokens (answer is one word; small = much faster)")
     a = ap.parse_args()
+    global TIMEOUT, MAXTOK
+    TIMEOUT, MAXTOK = a.timeout, a.max_tokens
     nonqwen = os.environ.get("GATE_MODEL")
     qwen = os.environ.get("GATE_QWEN_MODEL")
     if not (API_KEY and nonqwen):

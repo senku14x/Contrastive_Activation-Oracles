@@ -53,11 +53,17 @@ def main() -> int:
 
     dH = PB.pool_layer_major(HB - HA)
     hB = PB.pool_layer_major(HB)
+    print(f"  [1/4] probe(ΔH): {n} LOO fits...", flush=True)
     auc_dh = PB.probe_auc(dH, y, a.k)
+    print(f"  [2/4] probe(H_B alone): {n} LOO fits...", flush=True)
     auc_hb = PB.probe_auc(hB, y, a.k)
+    print(f"  [3/4] text-feature baseline: {n} LOO fits...", flush=True)
     auc_txt = PB.probe_auc(_text_features(meta, ids), y, a.k)
     rng = np.random.default_rng(0)
-    shuf = [PB.probe_auc(dH, rng.permutation(y), a.k) for _ in range(a.perm)]
+    shuf = []
+    for i in range(a.perm):
+        print(f"  [4/4] shuffle control {i + 1}/{a.perm}...", flush=True)
+        shuf.append(PB.probe_auc(dH, rng.permutation(y), a.k))
     shuf = float(np.nanmean(shuf))
 
     print(f"  probe(ΔH)            AUC = {auc_dh:.3f}   <- primary readout")
@@ -66,9 +72,17 @@ def main() -> int:
     print(f"  shuffled-label ΔH    AUC = {shuf:.3f}   <- sanity (want ~0.50)")
 
     best_act = max(auc_dh, auc_hb)
+    min_class = min(nmiss, ncatch)
     print("\nverdict:")
-    if n < 30:
-        print(f"  UNDERPOWERED (n={n} < 30): treat any result as inconclusive, not 'no signal' (spec §19).")
+    # Power gate FIRST: at tiny n / tiny minority class, AUCs are noise (a few-point swing moves AUC
+    # ~0.2). Neither 'signal' nor 'negative' is supportable -> do not evaluate either branch.
+    if n < 30 or min_class < 8:
+        print(f"  INCONCLUSIVE — UNDERPOWERED (n={n}, minority class={min_class}). At this size the AUCs "
+              f"({auc_dh:.2f}/{auc_hb:.2f} vs text {auc_txt:.2f}, shuffle {shuf:.2f}) are noise: a single "
+              f"misclassified item moves AUC ~0.2. This is NOT a negative — it cannot distinguish "
+              f"'no signal' from 'not enough data'. Need >= ~30 total AND >= ~8-10 in the minority "
+              f"(catch) class before reading the result.")
+        return 0
     if best_act > 0.70 and best_act - auc_txt > 0.10 and shuf < 0.62:
         print("  SIGNAL likely present: activation probe beats the text-feature baseline and shuffle is flat.")
         print("  -> proceed to Stage 2 (AO zero-shot); detection AO <= probe is expected (spec §6/§12).")
