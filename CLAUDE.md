@@ -6,13 +6,23 @@ Orientation doc for this repo. Read this first. The full plan is in `docs/projec
 
 ---
 
-## TL;DR (where we are right now — 2026-06-29)
+## TL;DR (where we are right now — 2026-07-01)
 
-We built the dataset + the whole Stage-0→1.5 pipeline, ran it on an A100, and hit the **expected
-binding constraint, not a bug**: the scientific class we need (Qwen *catching* a planted fallacy) is
-**rare (~18%)**, so the existence probe is **underpowered (4 catches), hence inconclusive — NOT a
-negative.** Everything that should be green is green (wiring, invariants, non-leakiness). The open
-decision is purely **how to get more "catch" examples** (or whether to stop and write up).
+**→ The full, nothing-hidden status is in `docs/STATUS.md`. Read that. This is the condensed version.**
+
+We scaled Family L to **167 items**, cleared the power floor (**15 catches, 30 balanced**), and got an
+**interpretable — and confounded — probe result**: at the primary window W8 `probe(ΔH)=0.804` beats the
+text baseline `0.686`, but this **does not survive scrutiny**: (a) the pre-registered sensitivity window
+**W20 reverses it** (probe 0.653 < text 0.684); (b) `probe(H_B alone)` is at **chance** in every powered
+run; (c) within a single subtype, **text beats the probe**; (d) the text baseline **rose with the
+"signal"** (0.32→0.69) as we scaled. Net: the probe is reading the **text/subtype contrast between the
+two conditions, not Qwen's disposition.** The registered "readable above text, robustly" claim is
+**not supported** on this design.
+
+**This is NOT "we failed" and NOT "underpowered."** It is a *confounded/negative read on Family L
+specifically*, and several load-bearing assumptions were **never tested** (ON-trajectory activations,
+layer/position sweep, the steering detection-floor control, the AO itself). Those — not more data — are
+where the answer, if any, still lives. See `docs/STATUS.md` §6–§7.
 
 **Nothing is broken. The pipeline is fully reproducible from committed code.**
 
@@ -45,74 +55,93 @@ Released oracle `ceselder/cot-oracle-v15-stochastic` reverse-engineered + reimpl
 injection at layer 1, additive norm-matched, coeff **1.0**; grouped layer-major format; **G1–G5 pass**
 (`scripts/stage0_repro.py`). Bauer's 2×/62% are a *different checkpoint* — out of scope.
 
-### Stage 1 — build data + behavioral screen — ✅ DONE (first bank)
-- **Family L** (primary, claim-carrier): **32 items**, 10 fallacy types, all ablation-verified,
-  80/80 token-invariants pass. OFF no-cue screen result:
-  - **4 clean CATCH, 18 clean MISS, 10 discard** (9 `competence_fail` + 1 `middle`). 22 valid.
-  - ⇒ **Qwen catches the fallacy ~18% of valid items; follows it ~82%** (misses with `p≈1.0`).
-    This matches the literature (models follow flawed "therefore" steps). **CATCH is the scarce,
-    binding class.**
+### Stage 1 — build data + behavioral screen — ✅ DONE (scaled to 167)
+- **Family L** (primary, claim-carrier): **167 items**, 10 fallacy types, all ablation-verified, token
+  invariants pass. Scaled 32 → 81 (generate-and-verify workflow) → 105 → 137 → 167 (hand-authored).
+  OFF no-cue screen on the 167-item bank: **~128 clean (113 MISS / 15 CATCH), ~39 discard.**
+  - ⇒ **Qwen catches ~15–18% of valid items; follows the fallacy ~82–85%** (misses with `p≈1.0`).
+    Robust across OFF (18%) and ON (22%). **CATCH is the scarce class.**
+  - **Catch is NOT uniform — it concentrates by subtype:** affirming_consequent ~43%, composition ~21%,
+    division ~8%, the other 7 subtypes **~0%** (see `scripts/subtype_yield.py`). Subtype is a text
+    property, so this is the root of the text leak (Stage 1.5).
   - The OFF readout is **deterministic** (reproduces bit-for-bit across runs).
-- **Family P** (validation shakedown, NOT a claim-carrier): 8 MCQs × 6 commitment templates = 48.
-  Screen: **34 CATCH, 0 MISS, 14 discard** → Qwen resists commitment cues entirely (re-confirms why
-  peer-hint was abandoned). Its job was to prove the pipeline runs end-to-end; it did.
+- **Family P** (validation shakedown, NOT a claim-carrier): 8 MCQs × 6 templates = 48. Qwen resists
+  commitment cues entirely (34 CATCH / 0 MISS) — re-confirms why peer-hint was abandoned. Pipeline
+  shakedown only; it did its job.
 
-### Stage 1.5 — existence probe — ⚠️ RAN, UNDERPOWERED → INCONCLUSIVE
-On the 22 valid L items (4 catch / 18 miss):
-| readout | W8 AUC | W20 AUC |
+### Stage 1.5 — existence probe — ⚠️ POWERED, CONFOUNDED → registered claim NOT supported
+Final powered run (167 items → 128 valid, 15 catch / 113 miss, **30 balanced = power floor cleared**):
+| readout | **W8 (primary)** | **W20 (pre-registered sensitivity)** |
 |---|---|---|
-| probe(ΔH) | 0.43 | 0.32 |
-| probe(H_B alone) | 0.17 | 0.23 |
-| text-feature probe (baseline to beat) | 0.32 | 0.32 |
-| shuffled-label ΔH (sanity, want ~0.5) | 0.55 | 0.48 |
+| probe(ΔH) | **0.804** | 0.653 |
+| probe(H_B alone) | 0.539 (chance) | 0.443 (chance) |
+| text-feature probe (baseline to beat) | 0.686 | 0.684 |
+| shuffled-label ΔH (want ~0.5) | 0.454 | 0.471 |
 
-**All within noise of chance.** With 4 catches the AUC CI is ≈ ±0.25 — a single misclassified item
-moves AUC ~0.2. So this is **"not enough data," not "no signal."** The script now power-gates the
-verdict (`n<30` or minority class `<8` → INCONCLUSIVE, never "negative").
+**The W8 "SIGNAL" does not survive scrutiny** (full detail + the run-by-run table in `docs/STATUS.md`
+§3–§5): W20 reverses it (probe < text); `H_B alone` is at chance everywhere; the text baseline **rose
+with the probe** as we scaled (0.32→0.38→0.62→0.69); and within a single subtype **text beats the
+probe** (AC-only: probe 0.652 < text 0.702). Signature = the probe reads the **text/subtype contrast**
+in `ΔH = H_flawed − H_correct`, **not** Qwen's disposition. (Because H_A/H_B differ in *wording*, ΔH
+conflates content-difference with disposition — Paper 2's splice confound, in reverse.)
 
-Also flagged: the 4 catches are **systematically longer prompts** (431 vs 408 chars,
-`|Δ|/SD=1.33`) → a confound to length-match away once we have more catches.
-
-### Stage 2 (AO zero-shot), Stage 3 (SFT) — NOT STARTED (gated behind a positive Stage 1.5).
+### Stage 2 (AO zero-shot), Stage 3 (SFT) — NOT STARTED. So is the steering detection-floor control,
+the ON-trajectory (mid-CoT) probe, and the layer/position sweep — the assumptions that were never tested.
 
 ---
 
 ## THE OPEN DECISION (this is what we're on)
 
-We need ~**15 catches** for a defensible probe (we have 4). At the ~20% catch rate that's ~**120 more
-items**.
+**We are no longer power-limited — we are confound-limited and design-limited.** More items will NOT
+manufacture an above-text signal. Path "A — scale" is **off the table** as a way to flip the verdict.
+Full menu in `docs/STATUS.md` §7; the live ones:
 
-- **B — reasoning-ON shortcut — TESTED, RULED OUT (2026-06-30).** ON catch rate = **7/32 = 22%** ≈ the
-  OFF 18%. Plain CoT does *not* balance the classes (consistent with PCBench: only an explicit
-  "check the premises" instruction lifts critique, and we don't add one — it collapses the gap). So the
-  ~20% catch rate is **robust across OFF/ON**; there is no cheap shortcut to power.
+- **B (cheap, high-info) — test "signal forms during CoT."** Only pre-output/OFF activations were ever
+  extracted. Extract ON-trajectory (mid/post-CoT) activations and probe those. `H_B`-at-chance is
+  *consistent* with the disposition forming during reasoning, not before it. Either finds the signal
+  (→ redirect the AO to read mid-CoT) or cleanly confirms it's absent pre-output.
+- **D (cheap) — steering detection-floor control.** Never run. Tells us if natural ‖ΔH‖ is even above
+  the interface's resolution floor — the assumption under everything.
+- **C (cheap, exploratory) — layer/position sweep.** {9,18,27} are the AO's *injection* layers; a probe
+  can read anywhere. Paper 3 says reading is best ~62% depth (layer 22). Re-extract all layers, probe.
+- **A (real fix, most work) — redesign for text-orthogonality.** Same-surface-text, different-upstream-
+  state contrast so ΔH isolates disposition. The only path that fixes the structural leak.
+- **E — write up** the behavioral finding + non-leaky dataset + the honest negative. Complete, but the
+  user's goal (ΔH signal → AO verbalizing shifts) is not yet achieved, and B/C/D are untested.
 
-Remaining paths:
-- **A — Scale (completes the registered experiment).** Bulk-author ~100–120 Family-L items (volume, not
-  cleverness — catch is Qwen's disposition at ~20% regardless of author) → harvest ~15 catches → the
-  real probe. Authoring is the **generate-and-verify workflow's** job (sandbox; workflow infra failed
-  twice, would retry). A *powered* result — even a null — is the spec's intended deliverable.
-- **C — Bank it.** Write up the real behavioral finding (*Qwen follows fallacious "therefore" bridges
-  ~80% OFF and ON, and that catch/miss split is non-leaky*) + the underpowered probe + build-yield as a
-  documented supply constraint. Partial (doesn't answer the existence question) but honest and complete.
-
-**Now: A (complete the experiment; authoring cost is the workflow's, not the user's) vs C (stop here).**
+**User's stated goal is still to get the ΔH signal and then train an AO on the shifts — so the live
+work is B/C/D (test the untested assumptions), not E.**
 
 ---
 
 ## Key facts to not re-learn the hard way
 
-- **"Good prompts" ≠ "balanced."** Three independent axes: construction validity (✅ 80/80 invariants),
-  non-leakiness (✅ GLM can't predict catch/miss), behavioral yield (⚠️ 18% catch). Only the third is
-  the problem, and it's a property of **Qwen**, not the prompts. No prompt edit raises the catch rate.
-- **The gate metric is balanced-accuracy, not raw match.** A constant/biased reader (GLM defaulted to
-  "MISS" on all L) scores high raw accuracy on the majority class but ~0.5 balanced → that IS the
-  non-leaky result. Earlier "LEAKS" labels were a metric bug (fixed).
-- **`competence_fail` ≠ bad construction in the structural sense.** It means Qwen commits to a definite
-  answer on the bare givens (doesn't see the item as under-determined). Reworking the *flaw* doesn't
-  fix it; the *givens* must read as open to Qwen. ~28% of items fail this.
-- **The probe at tiny minority-class is uninterpretable.** Don't read AUC until ≥ ~8–10 catches.
-- **OFF readout is deterministic**; ON needs sampling (K≥16). Don't finalize labels from K=8.
+- **Read the probe columns, not the script's canned verdict.** `stage1_5_probe.py`'s "SIGNAL" gate
+  (`ΔH>0.70 & ΔH−text>0.10 & shuffle flat`) fired at W8 on a **confounded positive**. It does NOT check
+  `H_B`-alone, subtype structure, or W8/W20 agreement — all three of which say the signal is text-borne.
+- **`probe(H_B alone)` at chance is the sharpest clue.** Catch/miss is decided in the flawed condition,
+  so if it were in the pre-output state, `H_B` should carry it. It doesn't (0.44–0.54 everywhere). The
+  only thing that scores is ΔH, which is dominated by the correct-vs-flawed **text difference**.
+- **The text baseline rose WITH the "signal"** (0.32→0.38→0.62→0.69) as we scaled/concentrated. Catch
+  concentrates in 2–3 subtypes; subtype is a text tell; a probe can fingerprint it. Within one subtype,
+  **text beats the probe.** This is the confound, and it's **structural to Family L** (H_A/H_B differ in
+  wording) — not fixable by more data.
+- **W8/W20 disagreement is the pre-registration doing its job.** W20 is the *declared* sensitivity check
+  precisely so W8 can't be cherry-picked. A signal that reverses across them is not robust.
+- **Padding that changes what the model reads changes the behavior.** A universal neutral prefix
+  (attempted leak-fix) collapsed catches 15→2 on the same bank; reverted (`d91b413`). Mock-tokenizer
+  code-correctness ≠ behavioral safety — any change to model input needs a GPU behavioral re-check.
+- **"Good prompts" ≠ "balanced" ≠ "non-confounded."** Four independent axes: construction validity
+  (✅ invariants), non-leaky-to-a-zero-shot-reader (✅ GLM/DeepSeek balanced-acc ~0.40), behavioral yield
+  (⚠️ ~15% catch, subtype-concentrated), and **non-leaky-to-a-supervised-text-probe (❌ — the new
+  failure).** The gate reader test passing does NOT imply the supervised-text-probe baseline is beaten.
+- **The gate metric is balanced-accuracy, not raw match** (a constant predictor → 0.5 → non-leaky).
+- **`competence_fail`** = Qwen commits to a definite answer on the bare givens; ~25–30% of items. The
+  *givens* must read as open, not the flaw.
+- **We optimized the kill-switch, not the experiment.** The probe was only ever the existence gate; the
+  AO comparison + steering control (the actual project) were skipped. Don't repeat that.
+- **OFF readout is deterministic**; ON needs sampling (K≥16). **We only ever extracted OFF/pre-output
+  activations** — the "forms during CoT" hypothesis is untested.
 - **Generated data files are gitignored** (`data/candidates_*.jsonl`, `*.npz`, etc.). Source of truth =
   `cao/family_l.py` / `cao/family_p.py`. Re-run `build_candidates.py` to regenerate.
 
@@ -137,12 +166,16 @@ scripts/  (pipeline order)
   measure_target_logits.py   OFF no-cue measurement (+ --on cross-check, --family filter)
   label_candidates.py        Stage A–D -> clean_catch / clean_miss / discard
   run_text_only_gate.py      dual text gate; balanced-acc discrimination; parallel + retry
-  match_catch_miss.py        confound check + freeze feasibility set (--require-gate)
+  match_catch_miss.py        confound check + freeze feasibility set (--require-gate, --subtype)
   extract_activations.py     H_A/H_B/ΔH over W8 + W20, layers {9,18,27}, adapter off
-  stage1_5_probe.py          THE existence gate: probe(ΔH/H_B) vs text-feature + shuffle
+  stage1_5_probe.py          THE existence gate: probe(ΔH/H_B) vs text-feature + shuffle (progress-printed)
   stage0_repro.py            Stage-0 wiring gate (G1–G5)
+  subtype_yield.py           DIAGNOSTIC: catch/miss/discard by flaw_subtype + authoring batch
+  inspect_text_leak.py       DIAGNOSTIC: top n-grams the text-feature probe keys on
+  diagnose_l78_outlier.py    DIAGNOSTIC: leave-one-out AUC sensitivity to the W20 outlier item
+  run_all.sh                 one-shot clone-to-probe pipeline (HF login + parallel gate)
 tests/   test_pure_logic.py, test_dataset_logic.py  (no model; run anywhere)
-docs/    project_spec_v4.md, data_construction_v2.md, COLAB.md (runbook), STAGE0.md
+docs/    STATUS.md (← full honest status), project_spec_v4.md, data_construction_v2.md, COLAB.md, STAGE0.md
 ```
 
 Run order (from `docs/COLAB.md`): build → pad → ablation_verify → verify_token_invariants →
@@ -162,15 +195,24 @@ forward pass. **Power bar: 30–40 balanced + a large probe-vs-text gap, shuffle
 (commitment) is validation-only (difficulty-leaky, not a claim).
 
 **Decision rule:** probe(ΔH or H_B) beats text-only by a large margin on 30–40 balanced items, shuffle
-kills it → signal exists. probe ≈ text → clean negative. < 30 / small gap → inconclusive (where we are).
+kills it → signal exists. probe ≈ text → clean negative. < 30 / small gap → inconclusive. **Where we
+are:** 30 balanced (floor cleared), but the W8 gap is confound-driven (W20 reverses, H_B at chance,
+within-subtype text wins) → registered claim NOT supported on Family L. Untested assumptions (ON-CoT,
+layer sweep, steering floor, the AO itself) remain — see `docs/STATUS.md`.
 
 ---
 
 ## Conventions
 
-- **Branch:** `claude/mechanistic-interpretability-qditqg`. Commit + push there; PR #1 is the draft.
+- **Branch:** `claude/mechanistic-interpretability-qditqg`. Commit + push there. **PR #1 was MERGED;
+  the live draft is PR #2** (rebased follow-up work onto main after the merge).
 - **Commit trailer:** `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>` + the `Claude-Session:` line.
 - Do **not** put the model identifier in committed artifacts.
 - Push with `-u origin <branch>`, retry with backoff on network errors.
-- All model runs happen on the user's Colab A100 (HuggingFace is egress-blocked in the dev sandbox).
-- Gate reader: GLM-4.6 via OpenRouter (`GATE_API_KEY`, `GATE_MODEL`), a strong non-Qwen reader.
+- All model runs happen on the user's GPU box (Vast/Colab A100/H100; HuggingFace is egress-blocked in
+  the dev sandbox). The Stage-1.5 probe stage is **CPU-only** (~2,900 sklearn fits; slow, not hung).
+- Gate reader: **`deepseek/deepseek-chat-v3-0324`** via OpenRouter (`GATE_API_KEY`, `GATE_MODEL`,
+  `GATE_WORKERS`), a strong non-Qwen non-reasoning reader. (Was GLM-4.6; switched for cost/speed.
+  `run_text_only_gate.py` now sends `reasoning:{enabled:false}` so hybrid readers don't burn the
+  24-token cap on hidden CoT. Avoid `deepseek-chat` — deprecating 2026-07-24 — and thinking-mode
+  models, which the output cap truncates before the answer word.)
