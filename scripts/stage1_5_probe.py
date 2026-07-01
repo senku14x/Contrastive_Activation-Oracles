@@ -53,11 +53,17 @@ def main() -> int:
 
     dH = PB.pool_layer_major(HB - HA)
     hB = PB.pool_layer_major(HB)
+    print(f"  [1/4] probe(ΔH): {n} LOO fits...", flush=True)
     auc_dh = PB.probe_auc(dH, y, a.k)
+    print(f"  [2/4] probe(H_B alone): {n} LOO fits...", flush=True)
     auc_hb = PB.probe_auc(hB, y, a.k)
+    print(f"  [3/4] text-feature baseline: {n} LOO fits...", flush=True)
     auc_txt = PB.probe_auc(_text_features(meta, ids), y, a.k)
     rng = np.random.default_rng(0)
-    shuf = [PB.probe_auc(dH, rng.permutation(y), a.k) for _ in range(a.perm)]
+    shuf = []
+    for i in range(a.perm):
+        print(f"  [4/4] shuffle control {i + 1}/{a.perm}...", flush=True)
+        shuf.append(PB.probe_auc(dH, rng.permutation(y), a.k))
     shuf = float(np.nanmean(shuf))
 
     print(f"  probe(ΔH)            AUC = {auc_dh:.3f}   <- primary readout")
