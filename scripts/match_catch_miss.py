@@ -35,6 +35,12 @@ def main() -> int:
                     help="for --require-gate false, point this at data/candidates_labeled.jsonl")
     ap.add_argument("--out", default="data/feasibility_frozen.jsonl")
     ap.add_argument("--family", default="L", choices=["L", "P", "all"])
+    ap.add_argument("--subtype", default="all",
+                    help="restrict to one flaw_subtype (e.g. affirming_consequent) -- use this when catch "
+                         "rate is concentrated in a few subtypes: mixing subtypes with very different catch "
+                         "rates lets a supervised text/activation probe fingerprint SUBTYPE as a proxy for "
+                         "the label instead of reading disposition. Single-subtype makes it a constant, not "
+                         "a variable. Default 'all' keeps the old behavior.")
     ap.add_argument("--require-gate", dest="require_gate", choices=["true", "false"], default="true",
                     help="false = use ALL clean items (gate NOT applied) for a pipeline dry-run / yield")
     a = ap.parse_args()
@@ -43,13 +49,15 @@ def main() -> int:
     recs = [json.loads(l) for l in open(a.gated)]
     sel = [r for r in recs if r["status"] in ("clean_miss", "clean_catch")
            and (a.family == "all" or r["family"] == a.family)
+           and (a.subtype == "all" or r.get("flaw_subtype") == a.subtype)
            and (not require or r.get("text_only_gate", {}).get("passes_gate", False))]
     if not require:
         print("** --require-gate false: using ALL clean items, text gate NOT applied. The existence-gate "
               "result is NOT valid for the claim — pipeline dry-run / yield only.\n")
     miss = [r for r in sel if r["status"] == "clean_miss"]
     catch = [r for r in sel if r["status"] == "clean_catch"]
-    print(f"gate-passing clean items (family={a.family}): MISS={len(miss)} CATCH={len(catch)}")
+    print(f"gate-passing clean items (family={a.family}, subtype={a.subtype}): "
+          f"MISS={len(miss)} CATCH={len(catch)}")
 
     flags = []
     for feat, fn in (("neutral_gold_margin", lambda r: r["derived"].get("neutral_gold_margin") or 0.0),
