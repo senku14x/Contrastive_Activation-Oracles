@@ -74,6 +74,9 @@ def reader_predict(model, text, tries: int = 2):
             r = requests.post(f"{BASE_URL}/chat/completions",
                               headers={"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"},
                               json={"model": model, "temperature": 0, "max_tokens": MAXTOK,
+                                    "reasoning": {"enabled": False},  # hybrid readers (DeepSeek V3.1+,
+                                    # some Gemini/GLM modes) default to thinking-on via OpenRouter unless
+                                    # told otherwise -> would burn MAXTOK on CoT, never emit the answer word.
                                     "messages": [{"role": "user", "content": text}]}, timeout=TIMEOUT)
             r.raise_for_status()
             txt = r.json()["choices"][0]["message"]["content"].upper()
